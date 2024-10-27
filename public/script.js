@@ -1,60 +1,61 @@
-// public/script.js
+const socket = io();
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
-const startCallButton = document.getElementById('startCall');
-
 let localStream;
-let remoteStream;
 let peerConnection;
 
-const socket = io();
+const configuration = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+    ],
+};
 
-// Room name for signaling (could be dynamic or hardcoded for demo purposes)
-const ROOM_NAME = 'video-call-room';
-
-socket.emit('join', ROOM_NAME);
-
-startCallButton.onclick = async () => {
-    // Get user media
+document.getElementById('startCall').onclick = async () => {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
+    peerConnection = new RTCPeerConnection(configuration);
 
-    // Set up the peer connection
-    peerConnection = new RTCPeerConnection();
-
-    // Add local stream tracks to peer connection
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    // Handle the event when a remote track arrives
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('candidate', event.candidate);
+        }
+    };
+
     peerConnection.ontrack = (event) => {
         remoteVideo.srcObject = event.streams[0];
     };
 
-    // Send ICE candidates to the other peer
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer);
+};
+
+socket.on('offer', async (offer) => {
+    peerConnection = new RTCPeerConnection(configuration);
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', answer);
+
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-            socket.emit('candidate', { room: ROOM_NAME, candidate: event.candidate });
+            socket.emit('candidate', event.candidate);
         }
     };
 
-    // Create an offer and send it to the other peer
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', { room: ROOM_NAME, offer });
-};
-
-// Listen for offer, answer, and candidate messages from the server
-socket.on('offer', async (data) => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', { room: ROOM_NAME, answer });
+    peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+    };
 });
 
-socket.on('answer', async (data) => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+socket.on('answer', (answer) => {
+    peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 });
 
-socket.on('candidate', async (data) => {
-    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+socket.on('candidate', (candidate) => {
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
 });
