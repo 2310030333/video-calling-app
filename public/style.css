@@ -1,4 +1,5 @@
 body {
+    background-image: url('background.jpg);
     display: flex;
     flex-direction: column;
     align-items: center;
