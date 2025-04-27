@@ -10,12 +10,9 @@ const configuration = {
     ],
 };
 
-document.getElementById('startCall').onclick = async () => {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localVideo.srcObject = localStream;
+// Initialize peer connection once
+async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(configuration);
-
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -26,6 +23,18 @@ document.getElementById('startCall').onclick = async () => {
     peerConnection.ontrack = (event) => {
         remoteVideo.srcObject = event.streams[0];
     };
+
+    // If local stream already exists, add tracks
+    if (localStream) {
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    }
+}
+
+document.getElementById('startCall').onclick = async () => {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = localStream;
+
+    await createPeerConnection();  // create peer connection once
 
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
@@ -33,29 +42,31 @@ document.getElementById('startCall').onclick = async () => {
 };
 
 socket.on('offer', async (offer) => {
-    peerConnection = new RTCPeerConnection(configuration);
+    if (!peerConnection) {
+        await createPeerConnection(); // create if not already created
+    }
+
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer);
+});
 
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('candidate', event.candidate);
+socket.on('answer', async (answer) => {
+    if (peerConnection.signalingState === 'have-local-offer') {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    } else {
+        console.warn('Unexpected answer received. Current signalingState:', peerConnection.signalingState);
+    }
+});
+
+socket.on('candidate', async (candidate) => {
+    if (peerConnection) {
+        try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+            console.error('Error adding received ice candidate', e);
         }
-    };
-
-    peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-    };
-});
-
-socket.on('answer', (answer) => {
-    peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-});
-
-socket.on('candidate', (candidate) => {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    }
 });
