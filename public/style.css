@@ -1,47 +1,22 @@
 body {
-    background: linear-gradient(135deg, #1f2937, #111827); /* dark gradient */
-    background-repeat: no-repeat;
-    background-size: cover;
+    background-image: url('background.jpg');
+    background-repeat: no-repeat;           
+    background-size: cover;                  
     background-position: center;
-    min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
-    gap: 2rem;
+    height: 100vh;
+    background-color: #f0f0f0;
 }
 
 video {
-    width: 40%;
-    max-width: 600px;
-    background-color: #1f2937; /* dark gray background inside video */
-    border-radius: 1rem; /* rounded corners */
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); /* soft shadow */
-    border: 2px solid #3b82f6; /* subtle blue border */
-    object-fit: cover;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-video:hover {
-    transform: scale(1.02);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    width: 45%;
+    margin: 10px;
+    border: 2px solid black;
 }
 
 #startCall {
-    background-color: #3b82f6; /* blue button */
-    color: white;
-    padding: 0.75rem 2rem;
-    font-size: 1.125rem;
-    font-weight: 600;
-    border: none;
-    border-radius: 9999px; /* fully rounded button */
-    cursor: pointer;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
-}
-
-#startCall:hover {
-    background-color: #2563eb; /* darker blue on hover */
-    transform: translateY(-2px);
+    margin: 20px;
 }
