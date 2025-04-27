@@ -1,35 +1,96 @@
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const path = require('path');
+const socket = io();
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+let localStream;
+let peerConnection;
+let pendingCandidates = [];
+let isCaller = false;
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+const configuration = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+};
 
-app.use(express.static(path.join(__dirname, 'public')));
+async function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(configuration);
 
-io.on('connection', (socket) => {
-    console.log('A user connected');
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('candidate', event.candidate);
+        }
+    };
 
-    socket.on('disconnect', () => {
-        console.log('User disconnected');
-    });
+    peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+    };
 
-    socket.on('offer', (offer) => {
-        socket.broadcast.emit('offer', offer);
-    });
+    if (localStream) {
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    }
+}
 
-    socket.on('answer', (answer) => {
-        socket.broadcast.emit('answer', answer);
-    });
+document.getElementById('startCall').onclick = async () => {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = localStream;
 
-    socket.on('candidate', (candidate) => {
-        socket.broadcast.emit('candidate', candidate);
-    });
+    await createPeerConnection();
+
+    isCaller = true;  // I am starting the call
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer);
+};
+
+socket.on('offer', async (offer) => {
+    console.log('Received offer');
+    if (!peerConnection) {
+        await createPeerConnection();
+    }
+
+    if (peerConnection.signalingState !== 'stable') {
+        console.warn('PeerConnection is not stable. Ignoring offer.');
+        return;
+    }
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', answer);
+
+    for (let candidate of pendingCandidates) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+        } catch (e) {
+            console.error('Error adding pending candidate', e);
+        }
+    }
+    pendingCandidates = [];
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+socket.on('answer', async (answer) => {
+    console.log('Received answer');
+    if (!isCaller) {
+        console.warn('I am not the caller, ignoring answer.');
+        return;
+    }
+
+    if (peerConnection.signalingState === 'have-local-offer') {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    } else {
+        console.warn('Unexpected answer received. Current signalingState:', peerConnection.signalingState);
+    }
+});
+
+socket.on('candidate', async (candidate) => {
+    if (peerConnection) {
+        if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+                console.error('Error adding received ice candidate', e);
+            }
+        } else {
+            pendingCandidates.push(new RTCIceCandidate(candidate));
+        }
+    }
 });
