@@ -4,11 +4,10 @@ const remoteVideo = document.getElementById('remoteVideo');
 let localStream;
 let peerConnection;
 let pendingCandidates = [];
+let isCaller = false;
 
 const configuration = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-    ],
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
 async function createPeerConnection() {
@@ -35,6 +34,7 @@ document.getElementById('startCall').onclick = async () => {
 
     await createPeerConnection();
 
+    isCaller = true;  // I am starting the call
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     socket.emit('offer', offer);
@@ -68,7 +68,13 @@ socket.on('offer', async (offer) => {
 });
 
 socket.on('answer', async (answer) => {
-    if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+    console.log('Received answer');
+    if (!isCaller) {
+        console.warn('I am not the caller, ignoring answer.');
+        return;
+    }
+
+    if (peerConnection.signalingState === 'have-local-offer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     } else {
         console.warn('Unexpected answer received. Current signalingState:', peerConnection.signalingState);
@@ -84,7 +90,6 @@ socket.on('candidate', async (candidate) => {
                 console.error('Error adding received ice candidate', e);
             }
         } else {
-            // Remote description not set yet, queue the candidate
             pendingCandidates.push(new RTCIceCandidate(candidate));
         }
     }
