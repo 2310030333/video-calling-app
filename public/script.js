@@ -37,6 +37,16 @@ async function createPeerConnection() {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
         console.log('Added local stream tracks');
     }
+
+    // ICE connection state change (helps in debugging)
+    peerConnection.oniceconnectionstatechange = () => {
+        console.log(`ICE connection state: ${peerConnection.iceConnectionState}`);
+    };
+
+    // Set signaling state change handler to track connection state
+    peerConnection.onsignalingstatechange = () => {
+        console.log(`Signaling state: ${peerConnection.signalingState}`);
+    };
 }
 
 // Join the room
