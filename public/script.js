@@ -64,26 +64,35 @@ socket.on('offer', async (offer) => {
         await createPeerConnection();
     }
 
-    // Set remote description
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    try {
+        // Only set remote description if it's not already set
+        if (peerConnection.signalingState === 'stable') {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        }
+        // Create and send an answer
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('answer', answer, room);
 
-    // Create and send an answer
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', answer, room);
-
-    // Add pending candidates
-    pendingCandidates.forEach(candidate => {
-        peerConnection.addIceCandidate(candidate);
-    });
-    pendingCandidates = [];
+        // Add pending candidates
+        pendingCandidates.forEach(candidate => {
+            peerConnection.addIceCandidate(candidate);
+        });
+        pendingCandidates = [];
+    } catch (error) {
+        console.error('Error handling offer:', error);
+    }
 });
 
 // Handle received answer
 socket.on('answer', async (answer) => {
     console.log('Received answer');
-    if (peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    try {
+        if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+    } catch (error) {
+        console.error('Error setting remote answer:', error);
     }
 });
 
@@ -117,7 +126,11 @@ document.getElementById('startCall').onclick = async () => {
 
 // Create and send an offer to the other user
 async function createAndSendOffer() {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer, room);
+    try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('offer', offer, room);
+    } catch (error) {
+        console.error('Error creating offer:', error);
+    }
 }
