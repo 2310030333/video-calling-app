@@ -8,7 +8,7 @@ const room = "my-room"; // Room name
 
 const configuration = {
     iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.l.google.com:19302' }, // Google's public STUN server
     ],
 };
 
@@ -19,18 +19,23 @@ async function createPeerConnection() {
     // On ICE candidate
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+            console.log('Sending ICE candidate');
             socket.emit('ice-candidate', event.candidate, room);
         }
     };
 
     // On receiving remote stream
     peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
+        if (remoteVideo.srcObject !== event.streams[0]) {
+            remoteVideo.srcObject = event.streams[0];
+            console.log('Remote stream added');
+        }
     };
 
     // Add tracks from local stream
     if (localStream) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        console.log('Added local stream tracks');
     }
 }
 
@@ -38,9 +43,7 @@ async function createPeerConnection() {
 socket.emit('join', room);
 
 socket.on('joined', async () => {
-    // The user has joined the room successfully
     console.log(`Joined room: ${room}`);
-
     if (localStream) {
         await createPeerConnection();
     }
@@ -49,7 +52,6 @@ socket.on('joined', async () => {
 // Handle other user joining
 socket.on('other-user-joined', () => {
     console.log('Other user joined the room');
-    
     if (!peerConnection) {
         createPeerConnection();
     }
