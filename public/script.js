@@ -41,14 +41,15 @@ document.getElementById('startCall').onclick = async () => {
 };
 
 socket.on('offer', async (offer) => {
-    console.log('Received offer');
     if (!peerConnection) {
         await createPeerConnection();
     }
 
-    if (peerConnection.signalingState !== 'stable') {
-        console.warn('PeerConnection is not stable. Ignoring offer.');
-        return;
+    // 🔥 Get local media stream (camera + mic) for callee
+    if (!localStream) {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
     }
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -57,6 +58,7 @@ socket.on('offer', async (offer) => {
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer);
 
+    // Process pending ICE candidates
     for (let candidate of pendingCandidates) {
         try {
             await peerConnection.addIceCandidate(candidate);
@@ -66,6 +68,7 @@ socket.on('offer', async (offer) => {
     }
     pendingCandidates = [];
 });
+
 
 socket.on('answer', async (answer) => {
     console.log('Received answer');
