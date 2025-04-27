@@ -1,96 +1,54 @@
-const socket = io();
-const localVideo = document.getElementById('localVideo');
-const remoteVideo = document.getElementById('remoteVideo');
-let localStream;
-let peerConnection;
-let pendingCandidates = [];
-let isCaller = false;
-
-const configuration = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-};
-
-async function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(configuration);
-
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('candidate', event.candidate);
-        }
-    };
-
-    peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-    };
-
-    if (localStream) {
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-    }
-}
-
-document.getElementById('startCall').onclick = async () => {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localVideo.srcObject = localStream;
-
-    await createPeerConnection();
-
-    isCaller = true;  // I am starting the call
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer);
-};
-
-socket.on('offer', async (offer) => {
-    console.log('Received offer');
-    if (!peerConnection) {
-        await createPeerConnection();
-    }
-
-    if (peerConnection.signalingState !== 'stable') {
-        console.warn('PeerConnection is not stable. Ignoring offer.');
-        return;
-    }
-
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', answer);
-
-    for (let candidate of pendingCandidates) {
-        try {
-            await peerConnection.addIceCandidate(candidate);
-        } catch (e) {
-            console.error('Error adding pending candidate', e);
-        }
-    }
-    pendingCandidates = [];
-});
-
-socket.on('answer', async (answer) => {
-    console.log('Received answer');
-    if (!isCaller) {
-        console.warn('I am not the caller, ignoring answer.');
-        return;
-    }
-
-    if (peerConnection.signalingState === 'have-local-offer') {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    } else {
-        console.warn('Unexpected answer received. Current signalingState:', peerConnection.signalingState);
-    }
-});
-
-socket.on('candidate', async (candidate) => {
-    if (peerConnection) {
-        if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-            try {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-                console.error('Error adding received ice candidate', e);
-            }
-        } else {
-            pendingCandidates.push(new RTCIceCandidate(candidate));
-        }
-    }
-});
+// server.js
+ const express = require('express');
+ const http = require('http');
+ const { Server } = require('socket.io');
+ const socketIo = require('socket.io');
+ const path = require('path');
+ 
+ const app = express();
+ const server = http.createServer(app);
+ const io = new Server(server);
+ const io = socketIo(server);
+ 
+ // Serve static files from 'public' folder
+ app.use(express.static(path.join(__dirname, 'public')));
+ 
+ io.on('connection', (socket) => {
+     console.log('A user connected:', socket.id);
+     console.log('A user connected');
+ 
+     socket.on('join', (room) => {
+         socket.join(room);
+         console.log(`User ${socket.id} joined room ${room}`);
+     socket.on('disconnect', () => {
+         console.log('User disconnected');
+     });
+ 
+     socket.on('offer', (data) => {
+         socket.to(data.room).emit('offer', data.offer);
+     socket.on('offer', (offer) => {
+         socket.broadcast.emit('offer', offer);
+     });
+ 
+     socket.on('answer', (data) => {
+         socket.to(data.room).emit('answer', data.answer);
+     socket.on('answer', (answer) => {
+         socket.broadcast.emit('answer', answer);
+     });
+ 
+     socket.on('candidate', (data) => {
+         socket.to(data.room).emit('candidate', data.candidate);
+     });
+ 
+     socket.on('disconnect', () => {
+         console.log('A user disconnected:', socket.id);
+     socket.on('candidate', (candidate) => {
+         socket.broadcast.emit('candidate', candidate);
+     });
+ });
+ 
+ const PORT = process.env.PORT || 3000;
+ server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+ server.listen(PORT, () => {
+     console.log(`Server is running on port ${PORT}`);
+ });
