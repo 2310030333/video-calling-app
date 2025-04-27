@@ -12,10 +12,8 @@ const io = new Server(server, {
     }
 });
 
-// Serve static files (HTML, CSS, JS)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Handle Socket.IO connections
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
@@ -24,9 +22,7 @@ io.on('connection', (socket) => {
         socket.join(room);
 
         const clients = io.sockets.adapter.rooms.get(room);
-
         if (clients && clients.size > 1) {
-            // Notify existing users someone new joined
             socket.to(room).emit('other-user-joined');
         }
 
@@ -53,7 +49,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// Start the server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
