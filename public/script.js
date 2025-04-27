@@ -3,6 +3,7 @@ const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
 let localStream;
 let peerConnection;
+let pendingCandidates = [];
 
 const configuration = {
     iceServers: [
@@ -10,7 +11,6 @@ const configuration = {
     ],
 };
 
-// Initialize peer connection once
 async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(configuration);
 
@@ -24,7 +24,6 @@ async function createPeerConnection() {
         remoteVideo.srcObject = event.streams[0];
     };
 
-    // If local stream already exists, add tracks
     if (localStream) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
     }
@@ -34,7 +33,7 @@ document.getElementById('startCall').onclick = async () => {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
 
-    await createPeerConnection();  // create peer connection once
+    await createPeerConnection();
 
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
@@ -43,7 +42,7 @@ document.getElementById('startCall').onclick = async () => {
 
 socket.on('offer', async (offer) => {
     if (!peerConnection) {
-        await createPeerConnection(); // create if not already created
+        await createPeerConnection();
     }
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -51,10 +50,20 @@ socket.on('offer', async (offer) => {
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer);
+
+    // Add any candidates that arrived early
+    for (let candidate of pendingCandidates) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+        } catch (e) {
+            console.error('Error adding pending candidate', e);
+        }
+    }
+    pendingCandidates = [];
 });
 
 socket.on('answer', async (answer) => {
-    if (peerConnection.signalingState === 'have-local-offer') {
+    if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     } else {
         console.warn('Unexpected answer received. Current signalingState:', peerConnection.signalingState);
@@ -63,10 +72,15 @@ socket.on('answer', async (answer) => {
 
 socket.on('candidate', async (candidate) => {
     if (peerConnection) {
-        try {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-            console.error('Error adding received ice candidate', e);
+        if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+                console.error('Error adding received ice candidate', e);
+            }
+        } else {
+            // Remote description not set yet, queue the candidate
+            pendingCandidates.push(new RTCIceCandidate(candidate));
         }
     }
 });
