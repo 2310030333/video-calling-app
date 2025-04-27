@@ -14,14 +14,17 @@ async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(configuration);
 
     peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('candidate', event.candidate);
-        }
-    };
+    if (event.candidate) {
+        socket.emit('ice-candidate', event.candidate);
+    }
+};
 
     peerConnection.ontrack = (event) => {
+    // First time only, set remote video
+    if (remoteVideo.srcObject !== event.streams[0]) {
         remoteVideo.srcObject = event.streams[0];
-    };
+    }
+};
 
     if (localStream) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -97,3 +100,14 @@ socket.on('candidate', async (candidate) => {
         }
     }
 });
+
+socket.on('ice-candidate', async (candidate) => {
+    if (peerConnection) {
+        try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+            console.error('Error adding ICE candidate:', e);
+        }
+    }
+});
+
