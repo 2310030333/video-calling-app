@@ -1,56 +1,85 @@
 const socket = io();
-
-let localStream;
-let remoteStream;
-let peerConnection;
-let isCaller = false;
-const room = 'my-room'; // make sure both users join the same room
-
-const servers = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-    ]
-};
-
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
-const startCallButton = document.getElementById('startCall');
+let localStream;
+let peerConnection;
+let pendingCandidates = [];
+const room = "my-room"; // Room name
+
+const configuration = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+    ],
+};
+
+// Create the peer connection
+async function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(configuration);
+
+    // On ICE candidate
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('ice-candidate', event.candidate, room);
+        }
+    };
+
+    // On receiving remote stream
+    peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+    };
+
+    // Add tracks from local stream
+    if (localStream) {
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    }
+}
 
 // Join the room
 socket.emit('join', room);
 
 socket.on('joined', async () => {
-    console.log('Joined room:', room);
-    await startLocalStream();
+    // The user has joined the room successfully
+    console.log(`Joined room: ${room}`);
+
+    if (localStream) {
+        await createPeerConnection();
+    }
 });
 
+// Handle other user joining
 socket.on('other-user-joined', () => {
-    console.log('Other user joined');
-    startCallButton.disabled = false;
+    console.log('Other user joined the room');
+    
+    if (!peerConnection) {
+        createPeerConnection();
+    }
+    // Create and send an offer
+    createAndSendOffer();
 });
 
-startCallButton.addEventListener('click', async () => {
-    isCaller = true;
-    createPeerConnection();
-    addLocalTracks();
-
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer, room);
-});
-
+// Handle received offer
 socket.on('offer', async (offer) => {
     console.log('Received offer');
     if (!peerConnection) {
-        createPeerConnection();
-        addLocalTracks();
+        await createPeerConnection();
     }
+
+    // Set remote description
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+    // Create and send an answer
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer, room);
+
+    // Add pending candidates
+    pendingCandidates.forEach(candidate => {
+        peerConnection.addIceCandidate(candidate);
+    });
+    pendingCandidates = [];
 });
 
+// Handle received answer
 socket.on('answer', async (answer) => {
     console.log('Received answer');
     if (peerConnection) {
@@ -58,47 +87,37 @@ socket.on('answer', async (answer) => {
     }
 });
 
+// Handle received ICE candidates
 socket.on('ice-candidate', async (candidate) => {
+    console.log('Received ICE candidate');
     if (peerConnection) {
         try {
             await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (error) {
-            console.error('Error adding received ice candidate', error);
+        } catch (e) {
+            console.error('Error adding ICE candidate', e);
         }
+    } else {
+        // Buffer candidates until peer connection is ready
+        pendingCandidates.push(candidate);
     }
 });
 
-async function startLocalStream() {
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
-    } catch (error) {
-        console.error('Error accessing media devices.', error);
-    }
-}
+// Start the call
+document.getElementById('startCall').onclick = async () => {
+    console.log('Start call button clicked');
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = localStream;
 
-function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(servers);
+    socket.emit('join', room);
 
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('ice-candidate', event.candidate, room);
-        }
-    };
+    // Create peer connection and send offer after joining
+    createPeerConnection();
+    createAndSendOffer();
+};
 
-    peerConnection.ontrack = (event) => {
-        if (!remoteStream) {
-            remoteStream = new MediaStream();
-            remoteVideo.srcObject = remoteStream;
-        }
-        remoteStream.addTrack(event.track);
-    };
-}
-
-function addLocalTracks() {
-    if (localStream) {
-        localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, localStream);
-        });
-    }
+// Create and send an offer to the other user
+async function createAndSendOffer() {
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer, room);
 }
