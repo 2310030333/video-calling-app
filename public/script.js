@@ -41,8 +41,14 @@ document.getElementById('startCall').onclick = async () => {
 };
 
 socket.on('offer', async (offer) => {
+    console.log('Received offer');
     if (!peerConnection) {
         await createPeerConnection();
+    }
+
+    if (peerConnection.signalingState !== 'stable') {
+        console.warn('PeerConnection is not stable. Ignoring offer.');
+        return;
     }
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -51,7 +57,6 @@ socket.on('offer', async (offer) => {
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer);
 
-    // Add any candidates that arrived early
     for (let candidate of pendingCandidates) {
         try {
             await peerConnection.addIceCandidate(candidate);
